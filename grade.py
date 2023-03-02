@@ -9,33 +9,14 @@ from datetime import datetime
 
 
 def get_student_names(file_path):
-    """
-    Reads a CSV file and returns a list of student names from the first column.
-
-    Args:
-        file_path (str): The file path of the CSV file.
-
-    Returns:
-        A list of student names.
-    """
-    df = pd.read_csv(file_path)
+    # read the file into a pandas dataframe (file has no header row)
+    df = pd.read_csv(file_path, header=None)
     return df.iloc[:, 0].tolist()
 
 # Function to initialize the scores dictionary
 
 
 def init_scores_and_comment_history(student_names, num_questions, num_subquestions):
-    """
-    Initializes the scores dictionary with zeros for all questions and subquestions for each student.
-
-    Args:
-        student_names (list of str): A list of student names.
-        num_questions (int): The total number of questions.
-        num_subquestions (list of int): A list of the number of subquestions for each question.
-
-    Returns:
-        A dictionary of dictionaries representing the scores for each student for each question and subquestion.
-    """
     points_lost = {}
     comment_history = {}
     for student_name in student_names:
@@ -52,26 +33,6 @@ def init_scores_and_comment_history(student_names, num_questions, num_subquestio
             comment_history[q][sq] = []
 
     return points_lost, comment_history
-
-# Function to get the user's response and score penalty
-
-
-def get_response(score_options):
-    """
-    Prompts the user to enter a response and score penalty for a subquestion, and returns them as a tuple.
-
-    Args:
-        score_options (list of str): A list of the available response options.
-
-    Returns:
-        A tuple containing the response and the score penalty.
-    """
-    response = input(f"Enter response ({', '.join(score_options)}): ")
-    if response not in score_options:
-        score_options.append(response)
-    response, penalty = response.split(' -')
-    return response, float(penalty)
-
 
 def grade_subquestion(question, subquestion):
     """
@@ -122,32 +83,14 @@ def grade_subquestion(question, subquestion):
         else:
             print("Invalid choice. Please try again.")
 
-# Function to record scores for all subquestions for a given question and student
-
 
 def record_scores(question, subquestions, student_name, points_lost):
-    """
-    Prompts the user to enter the scores for all subquestions for a given question and student.
-
-    Args:
-        question (str): The question being scored.
-        subquestions (list of str): A list of the subquestions for the question.
-        student_name (str): The name of the student being scored.
-        scores (dictionary): A dictionary of dictionaries representing the scores for each student for each question and subquestion.
-        score_options (list of str): A list of the available response options.
-
-    Returns:
-        None
-    """
     for subquestion in subquestions:
         print(f"{question}{subquestion}:")
         comment, deduction = grade_subquestion(question, subquestion)
         points_lost[student_name][question][subquestion] = (comment, deduction)
 
     return points_lost[student_name][question]
-
-# Function to save the current scores to a CSV file
-
 
 def save_state(students_done):
     """
@@ -192,7 +135,6 @@ def load_state(grading_id):
 
     return state
 
-
 # grading identifier to keep track of progress
 grading_id = input("Enter unique grading ID for this assignment (for example ECE452_HW3): ")
 
@@ -203,7 +145,7 @@ else:
     print(f"{grading_id} does not exist. Creating new session...")
     os.mkdir(grading_id)
     # set constants for the input file and output file
-    INPUT_FILE = 'names.csv'
+    INPUT_FILE = 'HW3_names.csv'
     OUTPUT_FILE = 'scores'  # will be appended with timestamp
 
     # read the student names from the input file
@@ -224,19 +166,16 @@ else:
 for i, student_name in enumerate(student_names):
     if i+1 <= students_done:
         continue
-    print(f"\n\nScoring {student_name} ({i + 1}/{len(student_names)})")
+    print(f"\n\n\n\n -------------- Scoring {student_name} ({i + 1}/{len(student_names)}) -------------- ")
     # loop through each question and subquestion, and prompt the user to enter scores
-    for i in range(num_questions):
-        question = f"Q{i + 1}"
+    for q_no in range(num_questions):
+        question = f"Q{q_no + 1}"
         # Determine the list of subquestions based on the number of subquestions for the current question
         start = ord('a')  # ASCII value for 'a'
-        end = start + num_subquestions[i]
+        end = start + num_subquestions[q_no]
         subquestions = [chr(j) for j in range(start, end)]
         grade_summary = record_scores(question, subquestions, student_name, points_lost)
         print(f"Grade summary for {student_name} for {question}: {grade_summary}")
     save_state(students_done=i+1)
-
-# save the scores to the output file
-save_state(OUTPUT_FILE, points_lost)
 
 print("Scores saved to", OUTPUT_FILE)
