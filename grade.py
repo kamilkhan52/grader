@@ -1,15 +1,28 @@
 # This python program helps log scores and comments for an assignment being graded. The program will read a list of student names from a file, and then prompt the user for a score and comment for each student. The program will then write the scores and comments to a file.
 
+
+# TODO
+# Allow the option to add multiple comments for a single subquestion. If the comment and deduction is followed by a + symbol, then the comment will be added to the list of comments for that subquestion. 
+
 import pandas as pd
 import pickle
 import os
 from datetime import datetime
+import argparse
+
+
+# parse command-line arguments
+parser = argparse.ArgumentParser()
+parser.add_argument('--names', type=str, required=True, help='csv file containing student names in the first column')
+parser.add_argument('--output', type=str, required=False, help='output filename', default='scores')
+args = parser.parse_args()
 
 # Function to get the student names from a CSV file
 
 
 def get_student_names(file_path):
     # read the file into a pandas dataframe (file has no header row)
+    print(f"Reading student names from {file_path}. If you want to use a different file, please edit the file path in the code.")
     df = pd.read_csv(file_path, header=None)
     return df.iloc[:, 0].tolist()
 
@@ -56,17 +69,20 @@ def grade_subquestion(question, subquestion):
     print(new_option)
 
     # Get user choice and handle new comment
+    # New: If choice is ended by a + symbol, then the comment will be added to the list of comments for that subquestion.
     while True:
         choice = input("Select an option: ")
         # skip if choice is empty
         if not choice:
-            return "correct", 0
+            return "Good", 0
+
+
         if choice in options:
             if choice == str(new_option_num):
                 comment_and_deduction = input("Enter new comment and deduction (comment, deduction): ")
                 while True:
                     try:
-                        comment, deduction = comment_and_deduction.split(',')
+                        comment, deduction = comment_and_deduction.rsplit(',', 1)
                         break
                     except ValueError:
                         print("Invalid input. Please try again.")
@@ -96,6 +112,7 @@ def save_state(students_done):
     """
     Saves the current state of the grading process to a pickle file.
     """
+    global out_filename # output filename needs to be global so it can be accessed by final print statement
 
     state = [grading_id, student_names, students_done, num_questions, num_subquestions, max_score, points_lost, comment_history, INPUT_FILE, OUTPUT_FILE]
 
@@ -115,10 +132,13 @@ def save_state(students_done):
                     subquestion = f"{chr(j + 97)}"
                     if not isinstance(points_lost[student_name][question][subquestion], tuple):  # no comment entered
                         continue
-                    if points_lost[student_name][question][subquestion][1] != 0:
+                    if points_lost[student_name][question][subquestion][1] != 0: # points lost
                         total_points_lost += points_lost[student_name][question][subquestion][1]
                         comments += f"{question}{subquestion}: {points_lost[student_name][question][subquestion][0]} (-{points_lost[student_name][question][subquestion][1]})\n"
-            out.write(f'\n"{student_name}","{max_score - total_points_lost}","{total_points_lost}","{comments}"')
+                    else: # no points lost (just comment)
+                        comments += f"{question}{subquestion}: {points_lost[student_name][question][subquestion][0]}\n"
+
+            out.write(f'\n"{student_name}","{max_score - total_points_lost}","{total_points_lost}","{comments.strip()}"')
 
 
 def load_state(grading_id):
@@ -145,7 +165,7 @@ else:
     print(f"{grading_id} does not exist. Creating new session...")
     os.mkdir(grading_id)
     # set constants for the input file and output file
-    INPUT_FILE = 'HW3_names.csv'
+    INPUT_FILE = args.names # student names file
     OUTPUT_FILE = 'scores'  # will be appended with timestamp
 
     # read the student names from the input file
@@ -178,4 +198,4 @@ for i, student_name in enumerate(student_names):
         print(f"Grade summary for {student_name} for {question}: {grade_summary}")
     save_state(students_done=i+1)
 
-print("Scores saved to", OUTPUT_FILE)
+print("Scores saved to", out_filename)
