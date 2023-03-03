@@ -9,7 +9,16 @@ import pickle
 import os
 from datetime import datetime
 import argparse
+import signal
 
+# if CTRL-C is pressed
+def signal_handler(sig, frame):
+    print("\n\n\nCTRL-C pressed. Saving state...")
+    save_state()
+    print(f"Saved state to {grading_id}/saved_state.pkl. \n Total students graded: {students_done}/{len(student_names)}\nYou can resume grading by providing the same grading ID ({grading_id}).")
+    exit(0)
+
+signal.signal(signal.SIGINT, signal_handler) # register signal handler
 
 # parse command-line arguments
 parser = argparse.ArgumentParser()
@@ -74,8 +83,7 @@ def grade_subquestion(question, subquestion):
         choice = input("Select an option: ")
         # skip if choice is empty
         if not choice:
-            return "Good", 0
-
+            return "None", 0 # no comment entered (this will not be saved into output file)
 
         if choice in options:
             if choice == str(new_option_num):
@@ -108,11 +116,12 @@ def record_scores(question, subquestions, student_name, points_lost):
 
     return points_lost[student_name][question]
 
-def save_state(students_done):
+def save_state():
     """
     Saves the current state of the grading process to a pickle file.
     """
     global out_filename # output filename needs to be global so it can be accessed by final print statement
+    global students_done
 
     state = [grading_id, student_names, students_done, num_questions, num_subquestions, max_score, points_lost, comment_history, INPUT_FILE, OUTPUT_FILE]
 
@@ -135,7 +144,7 @@ def save_state(students_done):
                     if points_lost[student_name][question][subquestion][1] != 0: # points lost
                         total_points_lost += points_lost[student_name][question][subquestion][1]
                         comments += f"{question}{subquestion}: {points_lost[student_name][question][subquestion][0]} (-{points_lost[student_name][question][subquestion][1]})\n"
-                    else: # no points lost (just comment)
+                    elif points_lost[student_name][question][subquestion][0] != "None": # no points lost (just comment, but not None (when Return is pressed))
                         comments += f"{question}{subquestion}: {points_lost[student_name][question][subquestion][0]}\n"
 
             out.write(f'\n"{student_name}","{max_score - total_points_lost}","{total_points_lost}","{comments.strip()}"')
@@ -157,6 +166,7 @@ def load_state(grading_id):
 
 # grading identifier to keep track of progress
 grading_id = input("Enter unique grading ID for this assignment (for example ECE452_HW3): ")
+students_done = 0
 
 if os.path.isdir(grading_id):
     print(f"{grading_id} exists. Loading saved state...")
@@ -170,7 +180,6 @@ else:
 
     # read the student names from the input file
     student_names = get_student_names(INPUT_FILE)
-    students_done = 0
     # get the number of questions and subquestions
     num_questions = int(input("Enter the number of questions: "))
     num_subquestions = []
@@ -184,7 +193,7 @@ else:
 
 
 for i, student_name in enumerate(student_names):
-    if i+1 <= students_done:
+    if i < students_done:
         continue
     print(f"\n\n\n\n -------------- Scoring {student_name} ({i + 1}/{len(student_names)}) -------------- ")
     # loop through each question and subquestion, and prompt the user to enter scores
@@ -196,6 +205,7 @@ for i, student_name in enumerate(student_names):
         subquestions = [chr(j) for j in range(start, end)]
         grade_summary = record_scores(question, subquestions, student_name, points_lost)
         print(f"Grade summary for {student_name} for {question}: {grade_summary}")
-    save_state(students_done=i+1)
+        students_done=i
+    save_state()
 
 print("Scores saved to", out_filename)
