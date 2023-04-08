@@ -71,7 +71,7 @@ def init_scores_and_comment_history(student_names, num_questions, num_subquestio
         points_lost[student_name] = {}
         for i in range(num_questions):
             question = f"Q{i + 1}"
-            points_lost[student_name][question] = {f"{chr(j)}": 0 for j in range(97, 97 + num_subquestions[i])}
+            points_lost[student_name][question] = {f"{chr(j)}": [] for j in range(97, 97 + num_subquestions[i])}
 
     # initialze comment history
     for i in range(num_questions):
@@ -107,35 +107,45 @@ def grade_subquestion(question, subquestion):
     # Get user choice and handle new comment
     # New: If choice is ended by a + symbol, then the comment will be added to the list of comments for that subquestion.
     while True:
-        choice = input("Select an option: ")
+        choices = input("Select options (comma-separated): ")
         # skip if choice is empty
-        if not choice:
-            return "None", 0  # no comment entered (this will not be saved into output file)
+        if not choices:
+            return [("None", 0)]  # no comment entered (this will not be saved into output file)
 
-        if choice in options:
-            if choice == str(new_option_num):
-                comment_and_deduction = input("Enter new comment and deduction (comment, deduction): ")
-                while True:
-                    try:
-                        comment, deduction = comment_and_deduction.rsplit(',', 1)
-                        deduction = int(deduction)
-                        if "\"" in comment:
-                            comment = comment.replace("\"", "")
-                            print(f"Removed quotes from comment: {comment}")
-                        break
-                    except ValueError:
-                        print("Invalid input. Please try again.")
-                        comment_and_deduction = input("Enter new comment and deduction (comment, deduction): ")
+        choices = choices.split(",")
+        comments = []
+        for choice in choices:
+            if choice in options:
+                if choice == str(new_option_num):
+                    comment_and_deduction = input("Enter new comment and deduction (comment, deduction): ")
+                    while True:
+                        try:
+                            comment, deduction = comment_and_deduction.rsplit(',', 1)
+                            if "\"" in comment:
+                                comment = comment.replace("\"", "")
+                                print(f"Removed quotes from comment: {comment}")
+                            break
+                        except ValueError:
+                            print("Invalid input. Please try again.")
+                            comment_and_deduction = input("Enter new comment and deduction (comment, deduction): ")
 
-                if deduction < 0:
-                    print(f"Converting negative deduction ({deduction}) to positive ({-deduction}).")
-                    deduction = -deduction
-                comment_history[question][subquestion].append((comment, deduction))
-                return comment, deduction
+                    deduction = int(deduction)
+                    if deduction < 0:
+                        print(f"Converting negative deduction ({deduction}) to positive ({-deduction}).")
+                        deduction = -deduction
+                    comment_history[question][subquestion].append((comment, deduction))
+                    comments.append((comment, deduction))
+                else:
+                    deduction = options[choice][1]
+                    comment = options[choice][0].replace("\"", "")
+                    comments.append((comment, deduction))
             else:
-                return options[choice][0].replace("\"", ""), options[choice][1]  # .replace("\"", "") only needed temporarily for old comment history files
-        else:
-            print("Invalid choice. Please try again.")
+                print("Invalid choice. Please try again.")
+                continue
+
+        # comment = "\n".join([str(c[0]) for c in comments])
+        # tot_deduction = sum([c[1] for c in comments])
+        return comments
 
 
 def record_scores(question, subquestions, student_name, points_lost):
@@ -144,8 +154,11 @@ def record_scores(question, subquestions, student_name, points_lost):
             print(f"\n\n{question}{subquestion}: ({solutions[question][subquestion][0]}) Answer: {solutions[question][subquestion][1]}\n")
         else:
             print(f"\n\n{question}{subquestion}:")
-        comment, deduction = grade_subquestion(question, subquestion)
-        points_lost[student_name][question][subquestion] = (comment, deduction)
+
+        comments = grade_subquestion(question, subquestion)
+
+        for comment, deduction in comments:
+            points_lost[student_name][question][subquestion].append((comment, deduction))
 
     return points_lost[student_name][question]
 
@@ -173,13 +186,14 @@ def save_state():
                 question = f"Q{i + 1}"
                 for j in range(num_subquestions[i]):
                     subquestion = f"{chr(j + 97)}"
-                    if not isinstance(points_lost[student_name][question][subquestion], tuple):  # no comment entered
+                    if not len(points_lost[student_name][question][subquestion]):  # no comment entered
                         continue
-                    if points_lost[student_name][question][subquestion][1] != 0:  # points lost
-                        total_points_lost += points_lost[student_name][question][subquestion][1]
-                        comments += f"{question}{subquestion}: {points_lost[student_name][question][subquestion][0]} (-{points_lost[student_name][question][subquestion][1]})\n"
-                    elif points_lost[student_name][question][subquestion][0] != "None":  # no points lost (just comment, but not None (when Return is pressed))
-                        comments += f"{question}{subquestion}: {points_lost[student_name][question][subquestion][0]}\n"
+                    for comment, deduction in points_lost[student_name][question][subquestion]:
+                        if deduction != 0:  # points lost
+                            total_points_lost += deduction
+                            comments += f"{question}{subquestion}: {comment} (-{deduction})\n"
+                        elif comment != "None":  # no points lost (just comment, but not None (when Return is pressed))
+                            comments += f"{question}{subquestion}: {comment}\n"
 
             out.write(f'\n"{student_name}","{max_score - total_points_lost}","{total_points_lost}","{comments.strip()}"')
 
@@ -198,18 +212,21 @@ def load_state(grading_id):
 
     return state
 
+
 def get_student_score(student_name):
     total_points_lost = 0
     for i in range(num_questions):
         question = f"Q{i + 1}"
         for j in range(num_subquestions[i]):
             subquestion = f"{chr(j + 97)}"
-            if not isinstance(points_lost[student_name][question][subquestion], tuple):  # no comment entered
+            if not len(points_lost[student_name][question][subquestion]):  # no comment entered
                 continue
-            if points_lost[student_name][question][subquestion][1] != 0:  # points lost
-                total_points_lost += points_lost[student_name][question][subquestion][1]
-    
+            for _, deduction in points_lost[student_name][question][subquestion]:
+                if deduction != 0:  # points lost
+                    total_points_lost += deduction
+
     return max_score - total_points_lost
+
 
 # grading identifier to keep track of progress
 grading_id = input("Enter unique grading ID for this assignment (for example ECE452_HW3): ")
@@ -244,10 +261,12 @@ else:
     for i in range(num_questions):
         num_subquestions.append(int(input(f"Enter the number of subquestions for question {i + 1}: ")))
 
-    # get the max score for the assignment
-    max_score = int(input("Enter the max score: "))
-    # initialize the scores dictionary
-    points_lost, comment_history = init_scores_and_comment_history(student_names, num_questions, num_subquestions)
+
+# get the max score for the assignment
+max_score = int(input("Enter the max score: "))
+
+# initialize the scores dictionary
+points_lost, comment_history = init_scores_and_comment_history(student_names, num_questions, num_subquestions)
 
 
 for i, student_name in enumerate(student_names):
