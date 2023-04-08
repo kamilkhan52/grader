@@ -2,7 +2,8 @@
 
 
 # TODO
-# Allow the option to add multiple comments for a single subquestion. If the comment and deduction is followed by a + symbol, then the comment will be added to the list of comments for that subquestion. 
+# Allow the option to add multiple comments for a single subquestion. If the comment and deduction is followed by a + symbol, then the comment will be added to the list of comments for that subquestion.
+# Print total points lost for each student at the end of grading.
 
 import pandas as pd
 import pickle
@@ -12,17 +13,25 @@ import argparse
 import signal
 
 # if CTRL-C is pressed
+
+
 def signal_handler(sig, frame):
-    print("\n\n\nCTRL-C pressed. Saving state...")
+    print("\n\n\nCTRL-C pressed.")
+    if students_done == 0:
+        print(f"No students graded. No state to save.")
+        exit(0)
+    print("Saving state...")
     save_state()
     print(f"Saved state to {grading_id}/saved_state.pkl. \n Total students graded: {students_done}/{len(student_names)}\nYou can resume grading by providing the same grading ID ({grading_id}).")
     exit(0)
 
-signal.signal(signal.SIGINT, signal_handler) # register signal handler
+
+signal.signal(signal.SIGINT, signal_handler)  # register signal handler
 
 # parse command-line arguments
 parser = argparse.ArgumentParser()
 parser.add_argument('--names', type=str, required=True, help='csv file containing student names in the first column')
+parser.add_argument('--solutions_file', type=str, required=True, help='text file containing solutions')
 parser.add_argument('--output', type=str, required=False, help='output filename', default='scores')
 args = parser.parse_args()
 
@@ -31,11 +40,28 @@ args = parser.parse_args()
 
 def get_student_names(file_path):
     # read the file into a pandas dataframe (file has no header row)
-    print(f"Reading student names from {file_path}. If you want to use a different file, please edit the file path in the code.")
+    print(f"Reading student names from {file_path}...")
     df = pd.read_csv(file_path, header=None)
     return df.iloc[:, 0].tolist()
 
-# Function to initialize the scores dictionary
+
+def get_solutions(solutions_file):
+    solutions = {}
+    print(f"Reading solutions from {solutions_file}...")
+    with open(solutions_file) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            if len(line.split(":")) != 4:
+                print(f"Invalid line in solutions file: {line}")
+                continue
+            question, subquestion, total_points, answer = line.split(":")
+            question = "Q" + question
+            if question not in solutions:
+                solutions[question] = {}
+            solutions[question][subquestion] = (int(total_points), answer)
+    return solutions
 
 
 def init_scores_and_comment_history(student_names, num_questions, num_subquestions):
@@ -55,6 +81,7 @@ def init_scores_and_comment_history(student_names, num_questions, num_subquestio
             comment_history[q][sq] = []
 
     return points_lost, comment_history
+
 
 def grade_subquestion(question, subquestion):
     """
@@ -83,7 +110,7 @@ def grade_subquestion(question, subquestion):
         choice = input("Select an option: ")
         # skip if choice is empty
         if not choice:
-            return "None", 0 # no comment entered (this will not be saved into output file)
+            return "None", 0  # no comment entered (this will not be saved into output file)
 
         if choice in options:
             if choice == str(new_option_num):
@@ -91,36 +118,43 @@ def grade_subquestion(question, subquestion):
                 while True:
                     try:
                         comment, deduction = comment_and_deduction.rsplit(',', 1)
+                        deduction = int(deduction)
+                        if "\"" in comment:
+                            comment = comment.replace("\"", "")
+                            print(f"Removed quotes from comment: {comment}")
                         break
                     except ValueError:
                         print("Invalid input. Please try again.")
                         comment_and_deduction = input("Enter new comment and deduction (comment, deduction): ")
 
-                deduction = int(deduction)
                 if deduction < 0:
                     print(f"Converting negative deduction ({deduction}) to positive ({-deduction}).")
                     deduction = -deduction
                 comment_history[question][subquestion].append((comment, deduction))
                 return comment, deduction
             else:
-                return options[choice][0], options[choice][1]
+                return options[choice][0].replace("\"", ""), options[choice][1]  # .replace("\"", "") only needed temporarily for old comment history files
         else:
             print("Invalid choice. Please try again.")
 
 
 def record_scores(question, subquestions, student_name, points_lost):
     for subquestion in subquestions:
-        print(f"{question}{subquestion}:")
+        if len(solutions):  # if solutions are provided, then print the correct answer
+            print(f"\n\n{question}{subquestion}: ({solutions[question][subquestion][0]}) Answer: {solutions[question][subquestion][1]}\n")
+        else:
+            print(f"\n\n{question}{subquestion}:")
         comment, deduction = grade_subquestion(question, subquestion)
         points_lost[student_name][question][subquestion] = (comment, deduction)
 
     return points_lost[student_name][question]
 
+
 def save_state():
     """
     Saves the current state of the grading process to a pickle file.
     """
-    global out_filename # output filename needs to be global so it can be accessed by final print statement
+    global out_filename  # output filename needs to be global so it can be accessed by final print statement
     global students_done
 
     state = [grading_id, student_names, students_done, num_questions, num_subquestions, max_score, points_lost, comment_history, INPUT_FILE, OUTPUT_FILE]
@@ -141,10 +175,10 @@ def save_state():
                     subquestion = f"{chr(j + 97)}"
                     if not isinstance(points_lost[student_name][question][subquestion], tuple):  # no comment entered
                         continue
-                    if points_lost[student_name][question][subquestion][1] != 0: # points lost
+                    if points_lost[student_name][question][subquestion][1] != 0:  # points lost
                         total_points_lost += points_lost[student_name][question][subquestion][1]
                         comments += f"{question}{subquestion}: {points_lost[student_name][question][subquestion][0]} (-{points_lost[student_name][question][subquestion][1]})\n"
-                    elif points_lost[student_name][question][subquestion][0] != "None": # no points lost (just comment, but not None (when Return is pressed))
+                    elif points_lost[student_name][question][subquestion][0] != "None":  # no points lost (just comment, but not None (when Return is pressed))
                         comments += f"{question}{subquestion}: {points_lost[student_name][question][subquestion][0]}\n"
 
             out.write(f'\n"{student_name}","{max_score - total_points_lost}","{total_points_lost}","{comments.strip()}"')
@@ -164,6 +198,19 @@ def load_state(grading_id):
 
     return state
 
+def get_student_score(student_name):
+    total_points_lost = 0
+    for i in range(num_questions):
+        question = f"Q{i + 1}"
+        for j in range(num_subquestions[i]):
+            subquestion = f"{chr(j + 97)}"
+            if not isinstance(points_lost[student_name][question][subquestion], tuple):  # no comment entered
+                continue
+            if points_lost[student_name][question][subquestion][1] != 0:  # points lost
+                total_points_lost += points_lost[student_name][question][subquestion][1]
+    
+    return max_score - total_points_lost
+
 # grading identifier to keep track of progress
 grading_id = input("Enter unique grading ID for this assignment (for example ECE452_HW3): ")
 students_done = 0
@@ -172,15 +219,26 @@ if os.path.isdir(grading_id):
     print(f"{grading_id} exists. Loading saved state...")
     grading_id, student_names, students_done, num_questions, num_subquestions, max_score, points_lost, comment_history, INPUT_FILE, OUTPUT_FILE = load_state(grading_id)
 else:
-    print(f"{grading_id} does not exist. Creating new session...")
+    print(f"Creating new session: {grading_id}")
     os.mkdir(grading_id)
     # set constants for the input file and output file
-    INPUT_FILE = args.names # student names file
+    INPUT_FILE = args.names  # student names file
     OUTPUT_FILE = 'scores'  # will be appended with timestamp
 
     # read the student names from the input file
     student_names = get_student_names(INPUT_FILE)
-    # get the number of questions and subquestions
+
+solutions = {}  # will always read from solutions file even when resuming grading to allow for updates to solutions file
+if args.solutions_file is not None:
+    SOLUTIONS_FILE = args.solutions_file
+    solutions = get_solutions(SOLUTIONS_FILE)
+
+    # get the number of questions and subquestions from solutions dictionary
+    num_questions = len(solutions)
+    num_subquestions = []
+    for question in solutions:
+        num_subquestions.append(len(solutions[question]))
+else:
     num_questions = int(input("Enter the number of questions: "))
     num_subquestions = []
     for i in range(num_questions):
@@ -193,7 +251,7 @@ else:
 
 
 for i, student_name in enumerate(student_names):
-    if i < students_done:
+    if i <= students_done:
         continue
     print(f"\n\n\n\n -------------- Scoring {student_name} ({i + 1}/{len(student_names)}) -------------- ")
     # loop through each question and subquestion, and prompt the user to enter scores
@@ -205,7 +263,10 @@ for i, student_name in enumerate(student_names):
         subquestions = [chr(j) for j in range(start, end)]
         grade_summary = record_scores(question, subquestions, student_name, points_lost)
         print(f"Grade summary for {student_name} for {question}: {grade_summary}")
-        students_done=i
+        students_done = i
+    # print total score for student
+    total_score = get_student_score(student_name)
+    print(f"Total score for {student_name}: {total_score}/{max_score}")
     save_state()
 
 print("Scores saved to", out_filename)
