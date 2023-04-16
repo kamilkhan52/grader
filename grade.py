@@ -17,7 +17,7 @@ import signal
 
 def signal_handler(sig, frame):
     print("\n\n\nCTRL-C pressed.")
-    if students_done == 0:
+    if students_done <= 1:
         print(f"No students graded. No state to save.")
         exit(0)
     print("Saving state...")
@@ -91,28 +91,37 @@ def grade_subquestion(question, subquestion):
     if subquestion not in comment_history[question]:
         comment_history[question][subquestion] = []
 
-    # Display previous comments as options
-    options = {}
-    for i, (comment, deduction) in enumerate(comment_history[question][subquestion]):
-        options[str(i+1)] = (comment, deduction)
-        print(f"{i+1}. {comment} (-{deduction})")
-
-    # Add new comment option
-    new_option_num = len(comment_history[question][subquestion]) + 1
-    new_option = f"{new_option_num}. Add new comment"
-    options[str(new_option_num)] = new_option
-
-    print(new_option)
-
-    # Get user choice and handle new comment
-    # New: If choice is ended by a + symbol, then the comment will be added to the list of comments for that subquestion.
     while True:
+        # Display previous comments as options
+        options = {}
+        for i, (comment, deduction) in enumerate(comment_history[question][subquestion]):
+            options[str(i+1)] = (comment, deduction)
+            print(f"{i+1}. {comment} (-{deduction})")
+
+        # Add new comment option
+        new_option_num = len(comment_history[question][subquestion]) + 1
+        new_option = f"{new_option_num}. Add new comment"
+        options[str(new_option_num)] = new_option
+
+        print(new_option)
+        # Get user choice and handle new comment
+
         choices = input("Select options (comma-separated): ")
         # skip if choice is empty
         if not choices:
             return [("None", 0)]  # no comment entered (this will not be saved into output file)
 
         choices = choices.split(",")
+        # for choice in choices:
+        #     if choice not in options:
+        #         print("Invalid choice. Please try again.")
+        #         continue
+
+        # the above using any() and all() functions
+        if not all([choice in options for choice in choices]):
+            print("Invalid choice. Please try again.")
+            continue
+
         comments = []
         for choice in choices:
             if choice in options:
@@ -139,9 +148,7 @@ def grade_subquestion(question, subquestion):
                     deduction = options[choice][1]
                     comment = options[choice][0].replace("\"", "")
                     comments.append((comment, deduction))
-            else:
-                print("Invalid choice. Please try again.")
-                continue
+            # else:
 
         # comment = "\n".join([str(c[0]) for c in comments])
         # tot_deduction = sum([c[1] for c in comments])
@@ -231,10 +238,11 @@ def get_student_score(student_name):
 # grading identifier to keep track of progress
 grading_id = input("Enter unique grading ID for this assignment (for example ECE452_HW3): ")
 students_done = 0
-
+loaded_saved_state = False
 if os.path.isdir(grading_id):
     print(f"{grading_id} exists. Loading saved state...")
     grading_id, student_names, students_done, num_questions, num_subquestions, max_score, points_lost, comment_history, INPUT_FILE, OUTPUT_FILE = load_state(grading_id)
+    loaded_saved_state = True
 else:
     print(f"Creating new session: {grading_id}")
     os.mkdir(grading_id)
@@ -244,6 +252,9 @@ else:
 
     # read the student names from the input file
     student_names = get_student_names(INPUT_FILE)
+    
+    # get the max score for the assignment
+    max_score = int(input("Enter the max score: "))
 
 solutions = {}  # will always read from solutions file even when resuming grading to allow for updates to solutions file
 if args.solutions_file is not None:
@@ -261,16 +272,13 @@ else:
     for i in range(num_questions):
         num_subquestions.append(int(input(f"Enter the number of subquestions for question {i + 1}: ")))
 
-
-# get the max score for the assignment
-max_score = int(input("Enter the max score: "))
-
-# initialize the scores dictionary
-points_lost, comment_history = init_scores_and_comment_history(student_names, num_questions, num_subquestions)
+if not loaded_saved_state:
+    # initialize the scores dictionary
+    points_lost, comment_history = init_scores_and_comment_history(student_names, num_questions, num_subquestions)
 
 
 for i, student_name in enumerate(student_names):
-    if i <= students_done:
+    if i < students_done:
         continue
     print(f"\n\n\n\n -------------- Scoring {student_name} ({i + 1}/{len(student_names)}) -------------- ")
     # loop through each question and subquestion, and prompt the user to enter scores
@@ -282,7 +290,7 @@ for i, student_name in enumerate(student_names):
         subquestions = [chr(j) for j in range(start, end)]
         grade_summary = record_scores(question, subquestions, student_name, points_lost)
         print(f"Grade summary for {student_name} for {question}: {grade_summary}")
-        students_done = i
+        students_done = i+1
     # print total score for student
     total_score = get_student_score(student_name)
     print(f"Total score for {student_name}: {total_score}/{max_score}")
