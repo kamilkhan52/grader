@@ -33,6 +33,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--names', type=str, required=True, help='csv file containing student names in the first column')
 parser.add_argument('--solutions_file', type=str, required=True, help='text file containing solutions')
 parser.add_argument('--output', type=str, required=False, help='output filename', default='scores')
+parser.add_argument('--skip_questions', type=lambda s: [int(item) for item in s.split(',')], required=False, help='list of question numbers to skip', default=[])
 args = parser.parse_args()
 
 # Function to get the student names from a CSV file
@@ -272,6 +273,10 @@ else:
     for i in range(num_questions):
         num_subquestions.append(int(input(f"Enter the number of subquestions for question {i + 1}: ")))
 
+if args.skip_questions is not None:
+    print(f"Skipping questions {args.skip_questions} because it was specified in the skip_questions argument.")
+    skip_questions = [int (q) for q in args.skip_questions]
+
 if not loaded_saved_state:
     # initialize the scores dictionary
     points_lost, comment_history = init_scores_and_comment_history(student_names, num_questions, num_subquestions)
@@ -283,6 +288,10 @@ for i, student_name in enumerate(student_names):
     print(f"\n\n\n\n -------------- Scoring {student_name} ({i + 1}/{len(student_names)}) -------------- ")
     # loop through each question and subquestion, and prompt the user to enter scores
     for q_no in range(num_questions):
+        if q_no+1 in skip_questions:
+            print(f"Skipping question {q_no+1} because it was specified in the skip_questions {skip_questions} argument.")
+            continue
+            
         question = f"Q{q_no + 1}"
         # Determine the list of subquestions based on the number of subquestions for the current question
         start = ord('a')  # ASCII value for 'a'
